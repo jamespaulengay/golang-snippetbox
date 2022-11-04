@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"text/template"
 
 	_ "github.com/go-sql-driver/mysql"
 	"snippetbox.jamespaul.com/internal/models"
@@ -16,6 +17,7 @@ type application struct {
 	errorLog *log.Logger 
 	infoLog *log.Logger
 	snippets *models.SnippetModel
+	templateCache map[string]*template.Template
 }
 
 
@@ -36,12 +38,19 @@ func main() {
 
 	defer db.Close()
 
+	// Initialize a new template cache...
+	templateCache, err := newTemplateCache() 
+	if err != nil {
+		errorLog.Fatal(err) 
+	}
+
 	// Initialize a models.SnippetModel instance and add it to the application 
 	// dependencies.
 	app := &application{
 		errorLog: errorLog,
 		infoLog: infoLog,
 		snippets: &models.SnippetModel{DB: db},
+		templateCache: templateCache,
 	}
 
 	srv := &http.Server{ 
@@ -50,7 +59,7 @@ func main() {
 		Handler: app.routes(), 
 	}
 
-	infoLog.Printf("Starting server on %s", *addr) 
+	infoLog.Printf("Starting server on http://localhost%s", *addr) 
 	err = srv.ListenAndServe()
 	errorLog.Fatal(err)
 }
@@ -61,7 +70,7 @@ func openDB(dsn string) (*sql.DB, error) {
 	if err != nil {
 		return nil, err 
 	}
-	
+
 	if err = db.Ping(); err != nil { 
 		return nil, err
 	}
