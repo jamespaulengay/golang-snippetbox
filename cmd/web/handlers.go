@@ -15,6 +15,7 @@ func (app *application) home(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+
 	snippets, err := app.snippets.Latest() 
 	if err != nil {
 		app.serverError(w, err)
@@ -81,3 +82,5 @@ func (app *application) snippetCreate(w http.ResponseWriter, r *http.Request) {
 	// Redirect the user to the relevant page for the snippet.
 	http.Redirect(w, r, fmt.Sprintf("/snippet/view?id=%d", id), http.StatusSeeOther)
 }
+
+
