@@ -5,11 +5,10 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
-	"unicode/utf8"
 
 	"github.com/julienschmidt/httprouter"
 	"snippetbox.jamespaul.com/internal/models"
+	"snippetbox.jamespaul.com/internal/validator"
 )
 
 // Define a snippetCreateForm struct to represent the form data and validation
@@ -17,13 +16,18 @@ import (
 // exported (i.e. start with a capital letter). This is because struct fields
 // must be exported in order to be read by the html/template package when
 // rendering the template.
+
+// Update our snippetCreateForm struct to include struct tags which tell the
+// decoder how to map HTML form values into the different struct fields. So, for // example, here we're telling the decoder to store the value from the HTML form // input with the name "title" in the Title field. The struct tag `form:"-"`
+// tells the decoder to completely ignore a field during decoding.
 type snippetCreateForm struct {
-	Title string
-	Content string
-	Expires int
-	FieldErrors map[string]string
+	Title string `form:"title"` 
+	Content string `form:"content"` 
+	Expires int `form:"expires"` 
+	validator.Validator `form:"-"`
 }
 	
+
 
 func (app *application) home(w http.ResponseWriter, r *http.Request) { 
 	snippets, err := app.snippets.Latest() 
@@ -99,56 +103,30 @@ func (app *application) snippetCreatePost(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Use the r.PostForm.Get() method to retrieve the title and content 
-	// from the r.PostForm map.
-	title := r.PostForm.Get("title")
-	content := r.PostForm.Get("content")
+	// Declare a new empty instance of the snippetCreateForm struct.
+	var form snippetCreateForm
 
-	// The r.PostForm.Get() method always returns the form data as a *string*. 
-	// However, we're expecting our expires value to be a number, and want to 
-	// represent it in our Go code as an integer. So we need to manually covert 
-	// the form data to an integer using strconv.Atoi(), and we send a 400 Bad 
-	// Request response if the conversion fails.
-	expires, err := strconv.Atoi(r.PostForm.Get("expires")) 
+	// Call the Decode() method of the form decoder, passing in the current
+	// request and *a pointer* to our snippetCreateForm struct. This will
+	// essentially fill our struct with the relevant values from the HTML form. 
+	// If there is a problem, we return a 400 Bad Request response to the client. 
+	err = app.decodePostForm(r, &form)
 	if err != nil {
 		app.clientError(w, http.StatusBadRequest)
 		return
 	}
 
-	// Create an instance of the snippetCreateForm struct containing the values 
-	// from the form and an empty map for any validation errors.
-	form := snippetCreateForm{
-		Title: r.PostForm.Get("title"),
-		Content: r.PostForm.Get("content"),
-		Expires: expires,
-		FieldErrors: map[string]string{},
-	}
+	// Then validate and use the data as normal...
+	form.CheckField(validator.NotBlank(form.Title), "title", "This field cannot be blank") 
+	form.CheckField(validator.MaxChars(form.Title, 100), "title", "This field cannot be more than 100 characters long") 
+	form.CheckField(validator.NotBlank(form.Content), "content", "This field cannot be blank") 
+	form.CheckField(validator.PermittedInt(form.Expires, 1, 7, 365), "expires", "This field must equal 1, 7 or 365")	
 
 
-	// Initialize a map to hold any validation errors for the form fields.
-	fieldErrors := make(map[string]string)
-
-	// Check that the title value is not blank and is not more than 100
-	// characters long. If it fails either of those checks, add a message to the // errors map using the field name as the key.
-	if strings.TrimSpace(title) == "" {
-		form.FieldErrors["title"] = "This field cannot be blank" 
-	} else if utf8.RuneCountInString(title) > 100 {
-		form.FieldErrors["title"] = "This field cannot be more than 100 characters long" 
-	}
-
-	// Check that the Content value isn't blank.
-	if strings.TrimSpace(content) == "" { 
-		fieldErrors["content"] = "This field cannot be blank"
-	}	
-	// Check the expires value matches one of the permitted values (1, 7 or 
-	// 365).
-	if expires != 1 && expires != 7 && expires != 365 {
-		fieldErrors["expires"] = "This field must equal 1, 7 or 365" 
-	}
-
-	// If there are any errors, dump them in a plain text HTTP response and 
-	// return from the handler.
-	if len(fieldErrors) > 0 {
+	// Use the Valid() method to see if any of the checks failed. If they did, 
+	// then re-render the template passing in the form in the same way as
+	// before.
+	if !form.Valid() {
 		data := app.newTemplateData(r)
 		data.Form = form
 		app.render(w, http.StatusUnprocessableEntity, "create.tmpl", data) 

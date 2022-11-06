@@ -8,6 +8,7 @@ import (
 	"os"
 	"text/template"
 
+	"github.com/go-playground/form/v4"
 	_ "github.com/go-sql-driver/mysql"
 	"snippetbox.jamespaul.com/internal/models"
 )
@@ -18,6 +19,7 @@ type application struct {
 	infoLog *log.Logger
 	snippets *models.SnippetModel
 	templateCache map[string]*template.Template
+	formDecoder *form.Decoder
 }
 
 
@@ -44,6 +46,9 @@ func main() {
 		errorLog.Fatal(err) 
 	}
 
+	// Initialize a decoder instance...
+	formDecoder := form.NewDecoder()
+
 	// Initialize a models.SnippetModel instance and add it to the application 
 	// dependencies.
 	app := &application{
@@ -51,6 +56,7 @@ func main() {
 		infoLog: infoLog,
 		snippets: &models.SnippetModel{DB: db},
 		templateCache: templateCache,
+		formDecoder: formDecoder,
 	}
 
 	srv := &http.Server{ 
